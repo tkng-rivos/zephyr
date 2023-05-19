@@ -137,34 +137,34 @@ static void plic_irq_handler(const void *arg)
 	struct _isr_table_entry *ite;
 
 	/* Get the IRQ number generating the interrupt */
-	irq = regs->claim_complete;
+	while ((irq = regs->claim_complete) != 0) {
+		/*
+		 * Save IRQ in save_irq. To be used, if need be, by
+		 * subsequent handlers registered in the _sw_isr_table table,
+		 * as IRQ number held by the claim_complete register is
+		 * cleared upon read.
+		 */
+		save_irq = irq;
 
-	/*
-	 * Save IRQ in save_irq. To be used, if need be, by
-	 * subsequent handlers registered in the _sw_isr_table table,
-	 * as IRQ number held by the claim_complete register is
-	 * cleared upon read.
-	 */
-	save_irq = irq;
+		/*
+		 * If the IRQ is out of range, call z_irq_spurious.
+		 * A call to z_irq_spurious will not return.
+		 */
+		if (irq == 0U || irq >= PLIC_IRQS)
+			z_irq_spurious(NULL);
 
-	/*
-	 * If the IRQ is out of range, call z_irq_spurious.
-	 * A call to z_irq_spurious will not return.
-	 */
-	if (irq == 0U || irq >= PLIC_IRQS)
-		z_irq_spurious(NULL);
+		irq += CONFIG_2ND_LVL_ISR_TBL_OFFSET;
 
-	irq += CONFIG_2ND_LVL_ISR_TBL_OFFSET;
+		/* Call the corresponding IRQ handler in _sw_isr_table */
+		ite = (struct _isr_table_entry *)&_sw_isr_table[irq];
+		ite->isr(ite->arg);
 
-	/* Call the corresponding IRQ handler in _sw_isr_table */
-	ite = (struct _isr_table_entry *)&_sw_isr_table[irq];
-	ite->isr(ite->arg);
-
-	/*
-	 * Write to claim_complete register to indicate to
-	 * PLIC controller that the IRQ has been handled.
-	 */
-	regs->claim_complete = save_irq;
+		/*
+		 * Write to claim_complete register to indicate to
+		 * PLIC controller that the IRQ has been handled.
+		 */
+		regs->claim_complete = save_irq;
+	}
 }
 
 /**
